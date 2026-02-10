@@ -1,4 +1,4 @@
-#!/home/adrian/ROS2_Workspaces/ros_ml_venv/bin/python3
+#!/usr/bin/env python3
 
 from rclpy.node import Node
 import rclpy
