@@ -28,8 +28,8 @@ else:
 class XOR_model(nn.Module):
     def __init__(self):
         super(XOR_model, self).__init__()
-        self.linear1 = nn.Linear(2, 4)
-        self.linear15 = nn.Linear(4, 2)
+        self.linear1 = nn.Linear(2, 8)
+        self.linear15 = nn.Linear(8, 2)
         self.linear2 = nn.Linear(2, 1)
 
     def forward(self, x: Tensor) -> Tensor:
