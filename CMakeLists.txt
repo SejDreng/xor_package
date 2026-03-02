@@ -17,6 +17,7 @@ find_package(rosidl_default_generators REQUIRED)
 # ---- Interface generation ----
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/XorRequest.srv"
+  "srv/SaveModel.srv"
   "msg/XorResult.msg"
   DEPENDENCIES std_msgs
 )
@@ -26,6 +27,10 @@ install(PROGRAMS
   xor_package/client_node.py
   xor_package/sub_node.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY models/
+  DESTINATION lib/${PROJECT_NAME}/models
 )
 
 # ---- Export runtime dependencies ----

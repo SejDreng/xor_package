@@ -9,6 +9,10 @@ import torchvision.transforms as transforms
 from torchvision.transforms import ToTensor
 import torchvision.transforms.functional as F
 import torchvision
+import torch.onnx
+
+import os
+from ament_index_python.packages import get_package_share_directory
 
 # message types
 from std_msgs.msg import UInt8
@@ -17,6 +21,7 @@ from std_msgs.msg import Float32
 
 # service types
 from xor_package.srv import XorRequest
+from xor_package.srv import SaveModel
 
 topic_result = 'topic_result'
 
@@ -43,9 +48,10 @@ class ml_server(Node):
         super().__init__('ml_server')
         self.model = XOR_model()
         self.model.to(device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.0001)
         self.criterion = nn.BCELoss()
         self.srv = self.create_service(XorRequest, 'xor_service', self.xor_callback)
+        self.save_model_srv = self.create_service(SaveModel, 'save_model', self.save_model_callback)
         self.publisher_ = self.create_publisher(UInt8, topic_result, 10)
 
     def xor_callback(self, request, response):
@@ -80,6 +86,19 @@ class ml_server(Node):
         self.optimizer.step()
 
         return [loss.item(), output.item()]
+    
+    def save_model_callback(self, request, response):
+        package_share_directory = get_package_share_directory('xor_package')
+        models_dir = os.path.join(package_share_directory, 'models')
+        
+        # Ensure the models directory exists
+        os.makedirs(models_dir, exist_ok=True)
+        
+        model_path = os.path.join(models_dir, 'xor_model.pth')
+        torch.save(self.model.state_dict(), model_path)
+        self.get_logger().info(f"Model saved to: {model_path}")
+        response.success = True
+        return response
 
 
 def main():
@@ -89,6 +108,9 @@ def main():
     node = ml_server()
     rclpy.spin(node)
 
+    # If we ever exit the spin loop
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':
