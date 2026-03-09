@@ -17,7 +17,6 @@ find_package(rosidl_default_generators REQUIRED)
 # ---- Interface generation ----
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/XorRequest.srv"
-  "srv/SaveModel.srv"
   "msg/XorResult.msg"
   DEPENDENCIES std_msgs
 )

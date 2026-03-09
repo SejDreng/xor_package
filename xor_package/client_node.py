@@ -36,7 +36,7 @@ class ml_client(Node):
     def response_callback(self, future):
         try:
             response = future.result()
-            self.get_logger().info(f'Received response: Loss={response.loss}')
+            self.get_logger().info(f'Received response: Success={response.success}')
             self.send_request()
         except Exception as e:
             self.get_logger().error(f'Service call failed: {e}')

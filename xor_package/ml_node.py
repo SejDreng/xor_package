@@ -2,112 +2,98 @@
 
 from rclpy.node import Node
 import rclpy
-import torch
-import torch.nn as nn
-from torch import Tensor
-import torchvision.transforms as transforms
-from torchvision.transforms import ToTensor
-import torchvision.transforms.functional as F
-import torchvision
-import torch.onnx
+
+import numpy as np
+import tensorflow as tf
+
+# Running tflite model
+# import torch
+# import torch.nn as nn
+# from torch import Tensor
+# import torchvision.transforms as transforms
+# from torchvision.transforms import ToTensor
+# import torchvision.transforms.functional as F
+# import torchvision
+# import torch.onnx
 
 import os
 from ament_index_python.packages import get_package_share_directory
 
 # message types
 from std_msgs.msg import UInt8
-from std_msgs.msg import UInt8MultiArray
-from std_msgs.msg import Float32
 
 # service types
 from xor_package.srv import XorRequest
-from xor_package.srv import SaveModel
 
 topic_result = 'topic_result'
 
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-else:    
-    device = torch.device('cpu')
+# original pytorch model for reference. 
+# Converted with:
+# onnx2tf -i xor_model.onnx -o saved_model -oiqt \
+#   -cind x Datasets/calibration_data.npy [0.0] [1.0] \
+#   -iqd int8 -oqd int8 
 
-class XOR_model(nn.Module):
-    def __init__(self):
-        super(XOR_model, self).__init__()
-        self.linear1 = nn.Linear(2, 8)
-        self.linear15 = nn.Linear(8, 2)
-        self.linear2 = nn.Linear(2, 1)
+# REMEMBER TO PREFORM QUANTIZATION
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = torch.relu(self.linear1(x))
-        x = torch.relu(self.linear15(x))
-        x = torch.sigmoid(self.linear2(x))
-        return x
+# class XOR_model(nn.Module):
+#     def __init__(self):
+#         super(XOR_model, self).__init__()
+#         self.linear1 = nn.Linear(2, 8)
+#         self.linear15 = nn.Linear(8, 2)
+#         self.linear2 = nn.Linear(2, 1)
+
+#     def forward(self, x: Tensor) -> Tensor:
+#         x = torch.relu(self.linear1(x))
+#         x = torch.relu(self.linear15(x))
+#         x = torch.sigmoid(self.linear2(x))
+#         return x
 
 class ml_server(Node):
     def __init__(self):
         super().__init__('ml_server')
-        self.model = XOR_model()
-        self.model.to(device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
-        self.criterion = nn.BCELoss()
+        
+        model_path = "/home/adrian/ROS2_Workspaces/ros2_ws_tutorial/src/xor_package/models/saved_model/xor_model_full_integer_quant.tflite"
+        
+        # Should be this on voxl2:
+        # model_path = "/usr/bin/dnn/xor_model_full_integer_quant.tflite"
+        
+        self.interpreter = tf.lite.Interpreter(model_path=model_path)
+        self.interpreter.allocate_tensors()
+        
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
+        
+        # Get quantization parameters for Full INT8
+        self.input_scale, self.input_zero_point = self.input_details[0]['quantization']
+        self.output_scale, self.output_zero_point = self.output_details[0]['quantization']
+
         self.srv = self.create_service(XorRequest, 'xor_service', self.xor_callback)
-        self.save_model_srv = self.create_service(SaveModel, 'save_model', self.save_model_callback)
-        self.publisher_ = self.create_publisher(UInt8, topic_result, 10)
+        self.publisher_ = self.create_publisher(UInt8, 'topic_result', 10)
+        self.get_logger().info("TFLite Model loaded and ready.")
 
     def xor_callback(self, request, response):
         if len(request.input) != 2:
             self.get_logger().error("Input must have exactly 2 elements")
             return response
         
-        input_tensor = torch.tensor([request.input], dtype=torch.float32).to(device)
+        input_data = np.array([request.input], dtype=np.float32)
+        input_tensor = (input_data / self.input_scale + self.input_zero_point).astype(np.int8)
         
-        target_value = request.input[0] ^ request.input[1]
-        target = torch.tensor([[target_value]], dtype=torch.float32).to(device)
+        self.interpreter.set_tensor(self.input_details[0]['index'], input_tensor)
+        self.interpreter.invoke()
 
-        ar = self.predict_and_backward(input_tensor, target)
-        response.loss = ar[0] 
-
-        result = 1 if ar[1] >= 0.5 else 0
+        output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
+        ar = (output_data.astype(np.float32) - self.output_zero_point) * self.output_scale
+    
+        result = 1 if ar >= 0.5 else 0
         
         msg = UInt8()
         msg.data = result
         self.publisher_.publish(msg)
 
-        self.get_logger().info(f"Input: {request.input}, Predicted: {result}, Loss: {ar[0]}")
-            
-        return response
-        
-    def predict_and_backward (self, input_tensor: Tensor, target: Tensor) -> list[float]:
-        output = self.model(input_tensor)
-        loss = self.criterion(output, target)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        return [loss.item(), output.item()]
-    
-    def save_model_callback(self, request, response):
-        package_share_directory = get_package_share_directory('xor_package')
-        models_dir = os.path.join(package_share_directory, 'models')
-        
-        # Ensure the models directory exists
-        os.makedirs(models_dir, exist_ok=True)
-        
-        # Save PyTorch format
-        model_path_pth = os.path.join(models_dir, 'xor_model.pth')
-        torch.save(self.model.state_dict(), model_path_pth)
-        self.get_logger().info(f"PyTorch model saved to: {model_path_pth}")
-        
-        # Save ONNX format
-        model_path_onnx = os.path.join(models_dir, 'xor_model.onnx')
-        dummy_input = torch.randn(1, 2).to(device)
-        torch.onnx.export(self.model, dummy_input, model_path_onnx, export_params=True)
-        self.get_logger().info(f"ONNX model saved to: {model_path_onnx}")
-        
+        self.get_logger().info(f"Input: {request.input}, Predicted: {result}")
         response.success = True
         return response
-
 
 def main():
     print('Hi from XOR_server.')
