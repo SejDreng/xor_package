@@ -29,9 +29,10 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY models/
-  DESTINATION lib/${PROJECT_NAME}/models
-)
+# Models are generated at runtime, not installed from source
+# install(DIRECTORY models/
+#   DESTINATION lib/${PROJECT_NAME}/models
+# )
 
 # ---- Export runtime dependencies ----
 ament_export_dependencies(rosidl_default_runtime)
