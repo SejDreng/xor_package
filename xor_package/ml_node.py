@@ -64,10 +64,20 @@ class ml_server(Node):
         self.get_logger().info(f"Loading model from: {self.model_path}")
         model_path = self.model_path
         
-        # Should be this on voxl2:
+        # Should be this on voxl2 if we copy the model to /usr/bin/dnn/ and specify it in the .config, i will instead use system-level NNAPI directly--- IGNORE ---:
         # model_path = "/usr/bin/dnn/xor_model_full_integer_quant.tflite"
         
-        self.interpreter = tf.lite.Interpreter(model_path=model_path)
+        try:
+            # This invokes the system-level NNAPI, which automatically 
+            # finds the correct DSP/GPU accelerator for the QRB5165
+            nnapi_delegate = tf.lite.load_delegate("libnnapi_delegate.so")
+            delegates = [nnapi_delegate]
+            self.get_logger().info("NNAPI Delegate loaded successfully!")
+        except Exception as e:
+            self.get_logger().warn(f"Could not load NNAPI: {e}. Falling back to CPU.")
+            delegates = []
+                
+        self.interpreter = tf.lite.Interpreter(model_path=model_path, experimental_delegates=delegates)
         self.interpreter.allocate_tensors()
         
         self.input_details = self.interpreter.get_input_details()
