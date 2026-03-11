@@ -51,8 +51,18 @@ topic_result = 'topic_result'
 class ml_server(Node):
     def __init__(self):
         super().__init__('ml_server')
-        
-        model_path = "/home/adrian/ROS2_Workspaces/ros2_ws_tutorial/src/xor_package/models/saved_model/xor_model_full_integer_quant.tflite"
+        package_share_dir = get_package_share_directory('xor_package')
+
+        # This matches the folder structure created by the 'install' command in CMake
+        self.model_path = os.path.join(
+            package_share_dir, 
+            'models', 
+            'saved_model', 
+            'xor_model_full_integer_quant.tflite'
+        )
+
+        self.get_logger().info(f"Loading model from: {self.model_path}")
+        model_path = self.model_path
         
         # Should be this on voxl2:
         # model_path = "/usr/bin/dnn/xor_model_full_integer_quant.tflite"
